@@ -50,7 +50,7 @@ function Register() {
     if (error) { setLoading(false); return toast.error(error.message); }
     if (data.session) {
       // set withdrawal pin
-      await supabase.rpc("set_withdrawal_pin", { p_current: null, p_new: pin });
+      await supabase.rpc("set_withdrawal_pin", { p_current: null as unknown as string, p_new: pin });
       toast.success("Account created");
       nav({ to: "/dashboard" });
     } else {
