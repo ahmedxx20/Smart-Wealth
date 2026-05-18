@@ -15,8 +15,6 @@ function Register() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [pw, setPw] = useState("");
-  const [pw2, setPw2] = useState("");
   const [pin, setPin] = useState("");
   const [referral, setReferral] = useState(ref || "");
   const [loading, setLoading] = useState(false);
@@ -30,34 +28,37 @@ function Register() {
     return () => clearInterval(i);
   }, [otpSent]);
 
-  const sendCode = () => {
+  const sendCode = async () => {
     if (!email) return toast.error("Enter your email first");
+    if (!username) return toast.error("Enter your name first");
+    if (pin.length < 4) return toast.error("Withdrawal pin must be at least 4 digits");
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+        data: { username, referral_code: referral.toUpperCase() },
+      },
+    });
+    setLoading(false);
+    if (error) return toast.error(error.message);
     setOtpSent(true); setSeconds(240);
-    toast.success("Verification code sent to your email (use any 6-digit code in this demo)");
+    toast.success("Verification code sent to your email");
   };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pw !== pw2) return toast.error("Passwords do not match");
-    if (pw.length < 6) return toast.error("Password must be at least 6 characters");
-    if (pin.length < 4) return toast.error("Withdrawal pin must be at least 4 digits");
-    if (otpSent && code.length < 4) return toast.error("Enter the verification code");
+    if (!otpSent) return sendCode();
+    if (code.length < 6) return toast.error("Enter the 6-digit code");
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email, password: pw,
-      options: { data: { username, referral_code: referral.toUpperCase() } },
-    });
+    const { error } = await supabase.auth.verifyOtp({ email, token: code, type: "email" });
     if (error) { setLoading(false); return toast.error(error.message); }
-    if (data.session) {
-      // set withdrawal pin
-      await supabase.rpc("set_withdrawal_pin", { p_current: null as unknown as string, p_new: pin });
-      toast.success("Account created");
-      nav({ to: "/dashboard" });
-    } else {
-      toast.success("Check your email to confirm.");
-      nav({ to: "/login" });
-    }
+    // set withdrawal pin now that the user has a session
+    const { error: pinErr } = await supabase.rpc("set_withdrawal_pin", { p_current: null as unknown as string, p_new: pin });
     setLoading(false);
+    if (pinErr) toast.error("Account created but PIN setup failed: " + pinErr.message);
+    else toast.success("Account created");
+    nav({ to: "/dashboard" });
   };
 
   return (
@@ -65,19 +66,19 @@ function Register() {
       <form onSubmit={submit} className="glass-strong w-full max-w-md p-6 space-y-4">
         <div className="flex justify-center"><Logo size={42} /></div>
         <h1 className="text-center text-xl font-semibold">Create your account</h1>
-        <input className="input-glass" placeholder="Name" value={username} onChange={e => setUsername(e.target.value)} required />
-        <input className="input-glass" type="email" placeholder="Gmail address" value={email} onChange={e => setEmail(e.target.value)} required />
+        <input className="input-glass" placeholder="Name" value={username} onChange={e => setUsername(e.target.value)} disabled={otpSent} required />
+        <input className="input-glass" type="email" placeholder="Gmail address" value={email} onChange={e => setEmail(e.target.value)} disabled={otpSent} required />
+        <input className="input-glass" type="password" placeholder="Withdrawal pin" value={pin} onChange={e => setPin(e.target.value)} disabled={otpSent} required />
+        <input className="input-glass" placeholder="Referral code (optional)" value={referral} onChange={e => setReferral(e.target.value)} disabled={otpSent} />
         <div className="flex gap-2">
-          <input className="input-glass" placeholder="Verification code" value={code} onChange={e => setCode(e.target.value)} maxLength={6} />
-          <button type="button" className="btn-glow whitespace-nowrap" onClick={sendCode}>
+          <input className="input-glass" placeholder="Verification code" value={code} onChange={e => setCode(e.target.value)} maxLength={6} disabled={!otpSent} />
+          <button type="button" className="btn-glow whitespace-nowrap" onClick={sendCode} disabled={loading}>
             {otpSent ? `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,"0")}` : "Send code"}
           </button>
         </div>
-        <input className="input-glass" type="password" placeholder="Password" value={pw} onChange={e => setPw(e.target.value)} required />
-        <input className="input-glass" type="password" placeholder="Confirm password" value={pw2} onChange={e => setPw2(e.target.value)} required />
-        <input className="input-glass" type="password" placeholder="Withdrawal pin" value={pin} onChange={e => setPin(e.target.value)} required />
-        <input className="input-glass" placeholder="Referral code (optional)" value={referral} onChange={e => setReferral(e.target.value)} />
-        <button disabled={loading} className="btn-glow btn-glow-primary w-full">{loading ? "Creating…" : "Register"}</button>
+        <button disabled={loading} className="btn-glow btn-glow-primary w-full">
+          {loading ? "Please wait…" : otpSent ? "Verify & create account" : "Send verification code"}
+        </button>
         <p className="text-center text-sm text-muted-foreground">Already have an account? <Link to="/login" className="text-primary">Sign in</Link></p>
       </form>
     </div>
